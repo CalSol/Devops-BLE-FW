@@ -7,6 +7,8 @@
 // MCP3561/2/4 24-bit SPI ADC
 class Mcp3561 {
 public:
+  // per the packaging information on the datasheet, all devices have address b01,
+  // but alternative addresses can be special orderred
   Mcp3561(SPI& spi, DigitalOut& cs, int address = 1, int frequency = 1000000) : 
       spi_(spi), cs_(cs), address_(address), frequency_(frequency) {
   }
