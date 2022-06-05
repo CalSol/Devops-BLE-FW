@@ -9,6 +9,7 @@
 #include "ButtonGesture.h"
 #include "RgbActivityLed.h"
 #include "Mcp3201.h"
+#include "Mcp3561.h"
 #include "StatisticalCounter.h"
 #include "LongTimer.h"
 
@@ -35,13 +36,6 @@ Timer UsTimer;
 DigitalOut LedR(P1_11), LedG(P1_12), LedB(P1_13);
 RgbActivityDigitalOut StatusLed(UsTimer, LedR, LedG, LedB, false);
 
-SPI AdcSpi(P1_9, P0_8, P0_13);  // mosi, miso, sck
-
-SPI LcdSpi(P0_26, NC, P0_1);  // mosi, miso, sck
-DigitalOut LcdCs(P0_0, 1);
-DigitalOut LcdRs(P0_29);
-DigitalOut LcdReset(P1_15, 0);
-
 PwmOut Speaker(P0_14);
 
 DigitalOut GateControl(P0_25, 1);  // power gate
@@ -55,8 +49,9 @@ ButtonGesture Switch2Gesture(Switch2);
 
 BufferedSerial SwdUart(P1_0, NC, 115200);  // tx, rx
 
+SPI AdcSpi(P1_9, P0_8, P0_13);  // mosi, miso, sck
 DigitalOut AdcCs(P0_15, 1);
-// Mcp3550 Adc(SharedSpi, AdcCs, AdcSo);
+Mcp3561 Adc(AdcSpi, AdcCs);
 // Measure select options: TBD
 DigitalOut MeasureRange0(P0_19);
 DigitalOut MeasureRange1(P0_21);
@@ -68,6 +63,12 @@ PwmOut DriverControl(P0_23);  // current driver setpoint
 DigitalOut DriverRange0(P0_22);
 DigitalOut DriverRange1(P0_20);
 // MultimeterDriver Driver(DriverEnable, DriverControl);
+
+SPI LcdSpi(P0_26, NC, P0_1);  // mosi, miso, sck
+DigitalOut LcdCs(P0_0, 1);
+DigitalOut LcdRs(P0_29);
+DigitalOut LcdReset(P1_15, 0);
+
 
 FileHandle *mbed::mbed_override_console(int) {  // redirect printf to SWD UART pins
     return &SwdUart;
@@ -336,6 +337,11 @@ int main() {
 
     if (timer.read_ms() >= 1000) {
       timer.reset();
+
+      uint8_t status = Adc.readReg8(0);
+      printf("ADC <- %02x\n", status);
+
+
       auto adcStats = AdcStats.read();
       auto voltageStats = VoltageStats.read();
       AdcStats.reset();
