@@ -255,6 +255,13 @@ int main() {
   LcdSpi.format(8, 0);
   Lcd.init();
 
+  Adc.init();
+  Adc.startConversion();
+
+  printf("ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x\n", 
+    Adc.readReg8(Mcp3561::kRegister::CONFIG0), Adc.readReg8(Mcp3561::kRegister::CONFIG1),
+    Adc.readReg8(Mcp3561::kRegister::CONFIG2), Adc.readReg8(Mcp3561::kRegister::CONFIG3));
+
   // Driver.enable();
   // Driver.setCurrent(2000);
 
@@ -313,8 +320,15 @@ int main() {
       default: break;
     }
       
-    // uint32_t adcValue;
-    // int32_t voltage;
+    uint32_t adcValue;
+    int32_t voltage;
+
+    if (Adc.readRaw24(&adcValue)) {
+      StatusLed.pulse(RgbActivity::kGreen);
+      printf("ADC <- %lu\n", adcValue);
+      Adc.startConversion();
+    }
+
     // if (Meter.readVoltageMv(&voltage, &adcValue)) {
     //   AdcStats.addSample(adcValue);
     //   VoltageStats.addSample(voltage);
@@ -334,10 +348,6 @@ int main() {
 
     if (timer.read_ms() >= 1000) {
       timer.reset();
-
-      uint8_t status = Adc.readReg8(0);
-      printf("ADC <- %02x\n", status);
-
 
       auto adcStats = AdcStats.read();
       auto voltageStats = VoltageStats.read();
@@ -362,8 +372,6 @@ int main() {
       itoa(voltageStats.avg, voltsStr, 10);
       strcat(voltsStr, " mV\n");
       bleConsole.write(voltsStr);
-
-      StatusLed.pulse(RgbActivity::kCyan); // TODO: temporary liveness indicator
     }
 
     event_queue.dispatch_once();
@@ -373,8 +381,6 @@ int main() {
       widMain.layout();
       widMain.draw(Lcd, 0, 0);
       Lcd.update();
-
-      StatusLed.pulse(RgbActivity::kGreen);
     }
 
     StatusLed.update();
