@@ -47,8 +47,6 @@ ButtonGesture Switch1Gesture(Switch1);
 DigitalIn Switch2(P1_10, PinMode::PullUp);  // down
 ButtonGesture Switch2Gesture(Switch2);
 
-BufferedSerial SwdUart(P1_0, NC, 115200);  // tx, rx
-
 SPI AdcSpi(P1_9, P0_8, P0_13);  // mosi, miso, sck
 DigitalOut AdcCs(P0_15, 1);
 Mcp3561 Adc(AdcSpi, AdcCs);
@@ -64,16 +62,10 @@ DigitalOut DriverRange0(P0_22);
 DigitalOut DriverRange1(P0_20);
 // MultimeterDriver Driver(DriverEnable, DriverControl);
 
-SPI LcdSpi(P0_26, NC, P0_1);  // mosi, miso, sck
-DigitalOut LcdCs(P0_0, 1);
-DigitalOut LcdRs(P0_29);
-DigitalOut LcdReset(P1_15, 0);
-
-
+BufferedSerial SwdUart(P1_0, NC, 115200);  // tx, rx
 FileHandle *mbed::mbed_override_console(int) {  // redirect printf to SWD UART pins
     return &SwdUart;
 }
-
 
 USBSerial UsbSerial(false, 0x1209, 0x0001, 0x0001);
 
@@ -81,7 +73,11 @@ USBSerial UsbSerial(false, 0x1209, 0x0001, 0x0001);
 //
 // LCD and widgets
 //
-// St7735sGraphics<160, 80, 1, 26> Lcd(SharedSpi, LcdCs, LcdRs, LcdReset);
+SPI LcdSpi(P0_26, NC, P0_1);  // mosi, miso, sck
+DigitalOut LcdCs(P0_0, 1);
+DigitalOut LcdRs(P0_29);
+DigitalOut LcdReset(P1_15, 0);
+St7735sGraphics<160, 80, 1, 26> Lcd(LcdSpi, LcdCs, LcdRs, LcdReset);
 TimerTicker LcdUpdateTicker(100 * 1000, UsTimer);
 
 const uint8_t kContrastActive = 255;
@@ -218,7 +214,7 @@ Timer ConvTimer;
 
 
 int main() {
-  // Set SWO pin into GPIO mode, since it's used for the ADC CS
+  // Set SWO pin into GPIO mode
   NRF_CLOCK->TRACECONFIG = 0;
 
   Speaker.period_us(10);
@@ -256,7 +252,8 @@ int main() {
   LedG = 1;
   LedB = 1;
 
-  // Lcd.init();
+  LcdSpi.format(8, 0);
+  Lcd.init();
 
   // Driver.enable();
   // Driver.setCurrent(2000);
@@ -371,15 +368,14 @@ int main() {
 
     event_queue.dispatch_once();
 
-    // if (LcdUpdateTicker.checkExpired()) {
-    //   Lcd.clear();
-    //   widMain.layout();
-    //   widMain.draw(Lcd, 0, 0);
-    //   SharedSpi.frequency(10000000);
-    //   Lcd.update();
+    if (LcdUpdateTicker.checkExpired()) {
+      Lcd.clear();
+      widMain.layout();
+      widMain.draw(Lcd, 0, 0);
+      Lcd.update();
 
-    //   StatusLed.pulse(RgbActivity::kGreen);
-    // }
+      StatusLed.pulse(RgbActivity::kGreen);
+    }
 
     StatusLed.update();
   }
