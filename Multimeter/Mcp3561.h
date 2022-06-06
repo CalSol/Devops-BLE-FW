@@ -15,22 +15,25 @@ public:
 
   // default init routine
   void init(uint8_t oversample = kOsr::k256) {
-    writeReg8(kRegister::CONFIG0, 0x22);  // internal clock w/ no CLK out, ADC standby
+    spi_.format(8, 0);
+    spi_.frequency(1000 * 1000);
+    writeReg8(kRegister::CONFIG0, 0x23);  // internal clock w/ no CLK out, ADC standby
     writeReg8(kRegister::CONFIG1, (oversample & 0xf) << 2);  // OSR=max 88304
     writeReg8(kRegister::CONFIG3, 0x80);  // one-shot conversion into standby, 24b encoding
+    writeReg8(kRegister::IRQ, 0x03);  // enable fast command and start-conversion IRQ
   }
 
   // (re)starts a conversion, which can be ready out with readRaw24
-  void startConversion() {
-    fastCommand(kFastCommand::kStartConversion);
+  uint8_t startConversion() {
+    return fastCommand(kFastCommand::kStartConversion);
   }
 
   // sends a fast command, returning the status code
-  uint8_t fastCommand(uint8_t fastCommand) {
+  uint8_t fastCommand(uint8_t fastCommandCode) {
     cs_ = 0;
     wait_ns(25);
     uint8_t status = spi_.write((address_ & 0x3) << 6 |
-                                (fastCommand & 0xf) << 2 | 
+                                (fastCommandCode & 0xf) << 2 | 
                                 kCommandType::kFastCommand);
     wait_ns(50);
     cs_ = 1;
@@ -38,9 +41,9 @@ public:
     return status;
   }
 
-  // tries to reads the ADC as a 24-bit value, returning whether the ADC had new data
+  // tries to reads the ADC as a signed 24-bit value, returning whether the ADC had new data
   // does NOT start a new conversion
-  bool readRaw24(uint32_t* outValue) {
+  bool readRaw24(int32_t* outValue) {
     bool valid = false;
     cs_ = 0;
     wait_ns(25);
@@ -52,7 +55,10 @@ public:
       uint8_t dummy = 0;
       uint8_t data[3];
       spi_.write((char*)&dummy, 1, (char*)data, 3);
-      *outValue = (uint32_t)data[0] << 16 | (uint32_t)data[1] << 8 | data[0];
+      *outValue = (int32_t)data[0] << 16 | (int32_t)data[1] << 8 | data[0];
+      if (*outValue & (1 << 23)) {  // sign extend
+        *outValue |= (int32_t)0xff << 24;
+      }
       valid = true;
     }
 
