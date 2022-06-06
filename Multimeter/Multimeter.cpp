@@ -255,17 +255,22 @@ int main() {
   LcdSpi.format(8, 0);
   Lcd.init();
 
+  Adc.fullReset();
+
   // Adc.init(Mcp3561::kOsr::k16384);
   Adc.init(Mcp3561::kOsr::k98304);
-  Adc.startConversion();
+  wait_us(10*1000);  // overkill time for ADC setup
+  uint8_t statusCode = Adc.startConversion();
 
-  printf("ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x, MUX=%02x\n", 
+  printf("Status=%02x, ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x, MUX=%02x\n", statusCode,
     Adc.readReg8(Mcp3561::kRegister::CONFIG0), Adc.readReg8(Mcp3561::kRegister::CONFIG1),
     Adc.readReg8(Mcp3561::kRegister::CONFIG2), Adc.readReg8(Mcp3561::kRegister::CONFIG3),
     Adc.readReg8(Mcp3561::kRegister::MUX));
 
   // Driver.enable();
   // Driver.setCurrent(2000);
+
+  bool sw0Released = false;
 
   while (1) {
     if (audioTimer2.elapsed_time().count() >= 10) {
@@ -291,14 +296,19 @@ int main() {
       StatusLed.setIdle(RgbActivity::kOff);
     }
 
-    switch (Switch0Gesture.update()) {
-      case ButtonGesture::Gesture::kClickRelease:  // test code
-        // ThermService.updateTemperature(LedR == 1 ? 30 : 25);
-        break;
-      case ButtonGesture::Gesture::kHoldTransition:  // long press to shut off
-        GateControl = 0;
-        break;
-      default: break;
+    if (Switch0 == 1) {  // make sure to not detect anything related to the power on button
+      sw0Released = true;
+    }
+    if (sw0Released) {
+      switch (Switch0Gesture.update()) {
+        case ButtonGesture::Gesture::kClickRelease:  // test code
+          // ThermService.updateTemperature(LedR == 1 ? 30 : 25);
+          break;
+        case ButtonGesture::Gesture::kHoldTransition:  // long press to shut off
+          GateControl = 0;
+          break;
+        default: break;
+      }
     }
 
     switch (Switch1Gesture.update()) {

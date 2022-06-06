@@ -17,18 +17,24 @@ public:
   void init(uint8_t oversample = kOsr::k256) {
     spi_.format(8, 0);
     spi_.frequency(1000 * 1000);
-    writeReg8(kRegister::CONFIG0, 0x23);  // internal clock w/ no CLK out, ADC standby
-    writeReg8(kRegister::CONFIG1, (oversample & 0xf) << 2);  // OSR=max 88304
+    writeReg8(kRegister::CONFIG0, 0xE2);  // internal VREF, internal clock w/ no CLK out, ADC standby
+    writeReg8(kRegister::CONFIG1, (oversample & 0xf) << 2);
     writeReg8(kRegister::CONFIG3, 0x80);  // one-shot conversion into standby, 24b encoding
-    writeReg8(kRegister::IRQ, 0x03);  // enable fast command and start-conversion IRQ
+    // writeReg8(kRegister::IRQ, 0x03);  // enable fast command and start-conversion IRQ
 
-    // writeReg8(kRegister::MUX, 0x01);  // IN+ = CH0, IN- = CH1
-    writeReg8(kRegister::MUX, 0xDE);  // IN+ = CH0, IN- = CH1
+    writeReg8(kRegister::MUX, 0x01);  // IN+ = CH0, IN- = CH1
+    // writeReg8(kRegister::MUX, 0xDE);  // IN+ = CH0, IN- = CH1
   }
 
   // (re)starts a conversion, which can be ready out with readRaw24
   uint8_t startConversion() {
     return fastCommand(kFastCommand::kStartConversion);
+  }
+
+  // resets the device using the reset fast command
+  void fullReset() {
+    writeReg8(kRegister::IRQ, 0x03);  // enable fast command and start-conversion IRQ
+    fastCommand(kFastCommand::kDeviceFullReset);
   }
 
   // sends a fast command, returning the status code
