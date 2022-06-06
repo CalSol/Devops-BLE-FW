@@ -50,13 +50,17 @@ ButtonGesture Switch2Gesture(Switch2);
 SPI AdcSpi(P1_9, P0_8, P0_13);  // mosi, miso, sck
 DigitalOut AdcCs(P0_15, 1);
 Mcp3561 Adc(AdcSpi, AdcCs);
-// Measure select options: 00 = 1:1000, 01: 1:100, 10: 1:10, 11: 1:1
-DigitalOut MeasureRange0(P0_19, 1);
-DigitalOut MeasureRange1(P0_21, 1);
+DigitalOut MeasureRange1(P0_21, 0);
+DigitalOut MeasureRange0(P0_19, 0);
 DigitalOut InNegControl(P0_17, 1);  // 0 = GND, 1 = divider
 DigitalOut* measureRangeArray[] = {&MeasureRange0, &MeasureRange1};
-uint16_t measureRangeDivide[] = {1000, 100, 10, 1};  // 00, 01, 10, 11
-MultimeterMeasurer<4, 2> Meter(Adc, measureRangeDivide, measureRangeArray, InNegControl);
+uint16_t measureRangeDivide[] = {
+  1001 / 1,  // b00, ~1:1000
+  1010 / 10,  // b01, ~1:100
+  1100 / 100,  // b10, ~1:10
+  1  // b11, 1:1
+};
+MultimeterMeasurer<4, 2> Meter(Adc, measureRangeDivide, measureRangeArray);
 
 DigitalOut DriverEnable(P0_24);  // 1 = enable driver
 PwmOut DriverControl(P0_23);  // current driver setpoint
