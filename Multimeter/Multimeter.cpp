@@ -54,7 +54,9 @@ Mcp3561 Adc(AdcSpi, AdcCs);
 DigitalOut MeasureRange0(P0_19, 1);
 DigitalOut MeasureRange1(P0_21, 1);
 DigitalOut InNegControl(P0_17, 1);  // 0 = GND, 1 = divider
-// MultimeterMeasurer Meter(Adc, MeasureSelect, InNegControl);
+DigitalOut* measureRangeArray[] = {&MeasureRange0, &MeasureRange1};
+uint16_t measureRangeDivide[] = {1000, 100, 10, 1};  // 00, 01, 10, 11
+MultimeterMeasurer<4, 2> Meter(Adc, measureRangeDivide, measureRangeArray, InNegControl);
 
 DigitalOut DriverEnable(P0_24);  // 1 = enable driver
 PwmOut DriverControl(P0_23);  // current driver setpoint
@@ -257,9 +259,7 @@ int main() {
 
   Adc.fullReset();
 
-  // Adc.init(Mcp3561::kOsr::k16384);
-  Adc.init(Mcp3561::kOsr::k98304);
-  wait_us(10*1000);  // overkill time for ADC setup
+  Adc.init(Mcp3561::kOsr::k40960);
   uint8_t statusCode = Adc.startConversion();
 
   printf("Status=%02x, ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x, MUX=%02x\n", statusCode,
@@ -271,6 +271,7 @@ int main() {
   // Driver.setCurrent(2000);
 
   bool sw0Released = false;
+  uint16_t rangeDivide = 0;
 
   while (1) {
     if (audioTimer2.elapsed_time().count() >= 10) {
@@ -332,29 +333,25 @@ int main() {
       default: break;
     }
       
-    int32_t adcValue;
-    if (Adc.readRaw24(&adcValue)) {
-      StatusLed.pulse(RgbActivity::kGreen);
-      printf("ADC <- %ld\n", adcValue);
+    int32_t voltage, adcValue;
+    if (Meter.readVoltageMv(&voltage, &adcValue, &rangeDivide)) {
       Adc.startConversion();
-    }
 
-    // if (Meter.readVoltageMv(&voltage, &adcValue)) {
-    //   AdcStats.addSample(adcValue);
-    //   VoltageStats.addSample(voltage);
-    //   // printf("% 3lims    ADC=%li lsb    V=%li mV\n", 
-    //   //   ConvTimer.read_ms(), adcValue, voltage);
-    //   // ConvTimer.reset();
-    //   if (DriverEnable == 1) {
-    //     StatusLed.pulse(RgbActivity::kRed);
-    //   } else {
-    //     // if (MeasureSelect == 1) {  // direct
-    //       StatusLed.pulse(RgbActivity::kCyan);
-    //     // } else {  // divided
-    //     //   StatusLed.pulse(RgbActivity::kGreen);
-    //     // }
-    //   } 
-    // }
+      AdcStats.addSample(adcValue);
+      VoltageStats.addSample(voltage);
+      // printf("% 3lims    ADC=%li lsb    V=%li mV\n", 
+      //   ConvTimer.read_ms(), adcValue, voltage);
+      // ConvTimer.reset();
+      if (DriverEnable == 1) {
+        StatusLed.pulse(RgbActivity::kRed);
+      } else {
+        // if (MeasureSelect == 1) {  // direct
+          StatusLed.pulse(RgbActivity::kCyan);
+        // } else {  // divided
+        //   StatusLed.pulse(RgbActivity::kGreen);
+        // }
+      } 
+    }
 
     if (timer.read_ms() >= 1000) {
       timer.reset();
@@ -367,12 +364,12 @@ int main() {
       bleVoltmeter.writeVoltage(voltageStats.avg);
 
       // debugging stuff below
-      // printf("MS=%i, NC=%i, ADC(%u) = %lu - %lu - %lu (%lu)    V(%u) = %li - %li - %li (%li)\n", 
-      //     MeasureSelect.read(), InNegControl.read(),
-      //     adcStats.numSamples, adcStats.min, adcStats.avg, adcStats.max, 
-      //     adcStats.max-adcStats.min,
-      //     voltageStats.numSamples, voltageStats.min, voltageStats.avg, voltageStats.max, 
-      //     voltageStats.max-voltageStats.min);
+      printf("NC=%i, Div=%u, ADC(%u) = %lu - %lu - %lu (%lu)    V(%u) = %li - %li - %li (%li)\n", 
+          InNegControl.read(), rangeDivide,
+          adcStats.numSamples, adcStats.min, adcStats.avg, adcStats.max, 
+          adcStats.max-adcStats.min,
+          voltageStats.numSamples, voltageStats.min, voltageStats.avg, voltageStats.max, 
+          voltageStats.max-voltageStats.min);
 
       if (UsbSerial.connected()) {
         UsbSerial.printf("\n");

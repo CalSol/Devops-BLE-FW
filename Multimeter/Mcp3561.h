@@ -20,10 +20,10 @@ public:
     writeReg8(kRegister::CONFIG0, 0xE2);  // internal VREF, internal clock w/ no CLK out, ADC standby
     writeReg8(kRegister::CONFIG1, (oversample & 0xf) << 2);
     writeReg8(kRegister::CONFIG3, 0x80);  // one-shot conversion into standby, 24b encoding
-    // writeReg8(kRegister::IRQ, 0x03);  // enable fast command and start-conversion IRQ
+    writeReg8(kRegister::IRQ, 0x07);  // enable fast command and start-conversion IRQ, IRQ logic high
+    // note IRQ logic high needed if IRQ is not externally pulled high
 
     writeReg8(kRegister::MUX, 0x01);  // IN+ = CH0, IN- = CH1
-    // writeReg8(kRegister::MUX, 0xDE);  // IN+ = CH0, IN- = CH1
   }
 
   // (re)starts a conversion, which can be ready out with readRaw24
@@ -107,7 +107,6 @@ public:
 
     return returnData[1];
   }
-
 
   enum kRegister {
     ADCDATA = 0x0,

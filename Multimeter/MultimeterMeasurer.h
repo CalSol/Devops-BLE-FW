@@ -1,67 +1,69 @@
 #ifndef __MULTIMETER_MEASURER_H__
 #define __MULTIMETER_MEASURER_H__
 #include <mbed.h>
-#include "Mcp3550.h"
+#include "Mcp3561.h"
 
 
 /**
  * Volts measurement stage for the multimeter.
  * Optional auto-ranging.
  */
+template <size_t MeasureRangeCount, uint8_t MeasureRangeBits>
 class MultimeterMeasurer {
 public:
-  enum Range {
-    kRange1,
-    kRange100,
-  };
-
-  MultimeterMeasurer(Mcp3550& adc, DigitalOut& measureSelect, DigitalOut& referenceSelect) :
-      adc_(adc), measureSelect_(measureSelect), referenceSelect_(referenceSelect) {
-  }
-
-  void setRange(Range range) {
-    switch (range) {
-      case kRange1:  measureSelect_ = 1;  break;
-      case kRange100:  measureSelect_ = 0;  break;
-      default: break;
+  MultimeterMeasurer(Mcp3561& adc, uint16_t measureRangeDivide[], DigitalOut* measureRange[], DigitalOut& referenceSelect) :
+      adc_(adc), referenceSelect_(referenceSelect) {
+    for (size_t i=0; i<MeasureRangeCount; i++) {
+      measureRangeDivide_[i] = measureRangeDivide[i];
+    }
+    for (size_t i=0; i<MeasureRangeBits; i++) {
+      measureRange_[i] = measureRange[i];
     }
   }
 
-  // 
-  bool readVoltageMv(int32_t* voltageOut = NULL, uint32_t* rawAdcOut = NULL) {
-    uint32_t adcValue;
-    if (!adc_.read_raw_u22(&adcValue)) {
+  // Reads the voltage in milli-volts, returning true if the conversion was successful and false otherwise
+  bool readVoltageMv(int32_t* voltageOut = NULL, int32_t* rawAdcOut = NULL, uint16_t* rangeDivideOut = NULL) {
+    int32_t adcValue;
+    if (!adc_.readRaw24(&adcValue)) {
       return false;
     }
 
+    uint8_t rangeIndex = 0;
+    for (size_t i=0; i<MeasureRangeBits; i++) {
+      rangeIndex |= (measureRange_[i]->read() == 1) << i;
+    }
+    uint16_t rangeDivide = measureRangeDivide_[rangeIndex];
+
+    int32_t voltage = (int64_t)adcValue * 1000 * rangeDivide * kVref / kAdcCounts / kVrefDenominator;
+
+    if (voltageOut != NULL) {
+      *voltageOut = voltage;
+    }
     if (rawAdcOut != NULL) {
       *rawAdcOut = adcValue;
     }
+    if (rangeDivideOut != NULL) {
+      *rangeDivideOut = rangeDivide; 
+    }
 
-    int64_t signedAdcValue = adcValue;
-    if (referenceSelect_.read() == 1) {
-      signedAdcValue = signedAdcValue - adcDivIntercept_;
-    }
-    if (measureSelect_.read() == 0) {  // 1:100 divider
-      *voltageOut = signedAdcValue * 1000 * kCalibrationDenominator / adcSlope100_;
-    } else {  // direct input
-      *voltageOut = signedAdcValue * 1000 * kCalibrationDenominator / adcSlope1_;
-    }
     return true;
   }
 
 protected:
-  Mcp3550 adc_;
-  DigitalOut measureSelect_;  // 0 = 1M/10k divider, 1: direct input
+  Mcp3561 adc_;
+  uint16_t measureRangeDivide_[MeasureRangeCount];
+  DigitalOut* measureRange_[MeasureRangeBits];
+  // DigitalOut measureSelect_;  // 0 = 1M/10k divider, 1: direct input
   DigitalOut referenceSelect_;  // 0 = GND, 1 = 1/2 divider (allows measuring negative voltages, 'virtual ground')
 
-  static constexpr float kVref = 3.3;
-  static const int32_t kAdcCounts = 2097152;  // 2^21, since we don't use the negative voltage range
-  static const int32_t kCalibrationDenominator = 1000;
-  int32_t adcDivIntercept_ = kAdcCounts / 2;
+  static const uint32_t kVref = 2400;  // By default +/-2% at 25C
+  static const uint32_t kVrefDenominator = 1000;
+  static const int32_t kAdcCounts = 1 << 23;
 
-  int32_t adcSlope1_ = (float)kCalibrationDenominator * kAdcCounts / kVref;
-  int32_t adcSlope100_ = (float)kCalibrationDenominator * kAdcCounts * (10.0/1010.0) / kVref;
+  // static const int32_t kCalibrationDenominator = 1000;
+  // int32_t adcDivIntercept_ = 0;
+  // int32_t adcSlope1_ = (float)kCalibrationDenominator * kAdcCounts / kVref;
+  // int32_t adcSlope100_ = (float)kCalibrationDenominator * kAdcCounts * (10.0/1010.0) / kVref;
 };
 
 #endif
