@@ -50,9 +50,9 @@ ButtonGesture Switch2Gesture(Switch2);
 SPI AdcSpi(P1_9, P0_8, P0_13);  // mosi, miso, sck
 DigitalOut AdcCs(P0_15, 1);
 Mcp3561 Adc(AdcSpi, AdcCs);
-// Measure select options: TBD
-DigitalOut MeasureRange0(P0_19);
-DigitalOut MeasureRange1(P0_21);
+// Measure select options: 00 = 1:1000, 01: 1:100, 10: 1:10, 11: 1:1
+DigitalOut MeasureRange0(P0_19, 1);
+DigitalOut MeasureRange1(P0_21, 1);
 DigitalOut InNegControl(P0_17, 1);  // 0 = GND, 1 = divider
 // MultimeterMeasurer Meter(Adc, MeasureSelect, InNegControl);
 
@@ -255,13 +255,14 @@ int main() {
   LcdSpi.format(8, 0);
   Lcd.init();
 
+  // Adc.init(Mcp3561::kOsr::k16384);
   Adc.init(Mcp3561::kOsr::k98304);
-  uint8_t statusc = Adc.startConversion();
+  Adc.startConversion();
 
-  printf("ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x    %02x\n", 
+  printf("ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x, MUX=%02x\n", 
     Adc.readReg8(Mcp3561::kRegister::CONFIG0), Adc.readReg8(Mcp3561::kRegister::CONFIG1),
     Adc.readReg8(Mcp3561::kRegister::CONFIG2), Adc.readReg8(Mcp3561::kRegister::CONFIG3),
-    statusc);
+    Adc.readReg8(Mcp3561::kRegister::MUX));
 
   // Driver.enable();
   // Driver.setCurrent(2000);
@@ -269,15 +270,15 @@ int main() {
   while (1) {
     if (audioTimer2.elapsed_time().count() >= 10) {
       float phase = audioTimer.elapsed_time().count() / 1000000.0 * 440.0 * 2 * 3.14159;
-      Speaker.write(0.5 + 0.5 * sin(phase));
+      Speaker.write(0.5 + 0.10 * sin(phase));
       audioTimer2.reset();
     }
 
     // if (audioTimer2.elapsed_time().count() >= 1000) {
     //     if (audioTimer2.elapsed_time().count() % 9090 > 4545) {
-    //         Speaker.write(0.25);
+    //         Speaker.write(0.55);
     //     } else {
-    //         Speaker.write(0.75);
+    //         Speaker.write(0.45);
     //     }
     // }
 
@@ -322,11 +323,9 @@ int main() {
     }
       
     int32_t adcValue;
-    int32_t voltage;
-
     if (Adc.readRaw24(&adcValue)) {
       StatusLed.pulse(RgbActivity::kGreen);
-      printf("ADC <- %li\n", adcValue);
+      printf("ADC <- %ld\n", adcValue);
       Adc.startConversion();
     }
 
@@ -377,12 +376,13 @@ int main() {
 
     event_queue.dispatch_once();
 
-    if (LcdUpdateTicker.checkExpired()) {
-      Lcd.clear();
-      widMain.layout();
-      widMain.draw(Lcd, 0, 0);
-      Lcd.update();
-    }
+    // TODO this takes a long time to run - this will interfere with the speaker tone generation
+    // if (LcdUpdateTicker.checkExpired()) {
+    //   Lcd.clear();
+    //   widMain.layout();
+    //   widMain.draw(Lcd, 0, 0);
+    //   Lcd.update();
+    // }
 
     StatusLed.update();
   }

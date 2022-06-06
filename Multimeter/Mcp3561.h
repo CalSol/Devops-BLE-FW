@@ -9,8 +9,8 @@ class Mcp3561 {
 public:
   // per the packaging information on the datasheet, all devices have address b01,
   // but alternative addresses can be special orderred
-  Mcp3561(SPI& spi, DigitalOut& cs, int address = 1, int frequency = 1000000) : 
-      spi_(spi), cs_(cs), address_(address), frequency_(frequency) {
+  Mcp3561(SPI& spi, DigitalOut& cs, int address = 1) : 
+      spi_(spi), cs_(cs), address_(address) {
   }
 
   // default init routine
@@ -21,6 +21,9 @@ public:
     writeReg8(kRegister::CONFIG1, (oversample & 0xf) << 2);  // OSR=max 88304
     writeReg8(kRegister::CONFIG3, 0x80);  // one-shot conversion into standby, 24b encoding
     writeReg8(kRegister::IRQ, 0x03);  // enable fast command and start-conversion IRQ
+
+    // writeReg8(kRegister::MUX, 0x01);  // IN+ = CH0, IN- = CH1
+    writeReg8(kRegister::MUX, 0xDE);  // IN+ = CH0, IN- = CH1
   }
 
   // (re)starts a conversion, which can be ready out with readRaw24
@@ -32,8 +35,8 @@ public:
   uint8_t fastCommand(uint8_t fastCommandCode) {
     cs_ = 0;
     wait_ns(25);
-    uint8_t status = spi_.write((address_ & 0x3) << 6 |
-                                (fastCommandCode & 0xf) << 2 | 
+    uint8_t status = spi_.write(((address_ & 0x3) << 6) |
+                                ((fastCommandCode & 0xf) << 2) | 
                                 kCommandType::kFastCommand);
     wait_ns(50);
     cs_ = 1;
@@ -48,14 +51,14 @@ public:
     cs_ = 0;
     wait_ns(25);
 
-    uint8_t status = spi_.write((address_ & 0x3) << 6 |
-                                (kRegister::ADCDATA & 0xf) << 2 | 
+    uint8_t status = spi_.write(((address_ & 0x3) << 6) |
+                                ((kRegister::ADCDATA & 0xf) << 2) | 
                                 kCommandType::kStaticRead);
     if ((status & 0x4) == 0) {  // STAT[2] /DataReady
       uint8_t dummy = 0;
       uint8_t data[3];
       spi_.write((char*)&dummy, 1, (char*)data, 3);
-      *outValue = (int32_t)data[0] << 16 | (int32_t)data[1] << 8 | data[0];
+      *outValue = ((int32_t)data[0] << 16) | ((int32_t)data[1] << 8) | data[2];
       if (*outValue & (1 << 23)) {  // sign extend
         *outValue |= (int32_t)0xff << 24;
       }
@@ -71,7 +74,7 @@ public:
   // writes 8 bits into a single register, returning the status code
   uint8_t writeReg8(uint8_t regAddr, uint8_t data) {
     uint8_t spiData[2];
-    spiData[0] = (address_ & 0x3) << 6 | (regAddr & 0xf) << 2 | kCommandType::kIncrementalWrite;
+    spiData[0] = ((address_ & 0x3) << 6) | ((regAddr & 0xf) << 2) | kCommandType::kIncrementalWrite;
     spiData[1] = data;
     uint8_t status;
     
@@ -86,7 +89,7 @@ public:
 
   uint8_t readReg8(uint8_t regAddr) {
     uint8_t spiData[2];
-    spiData[0] = (address_ & 0x3) << 6 | (regAddr & 0xf) << 2 | kCommandType::kStaticRead;
+    spiData[0] = ((address_ & 0x3) << 6) | ((regAddr & 0xf) << 2) | kCommandType::kStaticRead;
     spiData[1] = 0;
     uint8_t returnData[2];
 
@@ -153,7 +156,6 @@ public:
 protected:
   SPI& spi_;
   DigitalOut& cs_;
-  int frequency_;
   uint8_t address_;  // 2 bit device address
 };
 
