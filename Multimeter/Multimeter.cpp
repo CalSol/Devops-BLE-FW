@@ -8,10 +8,10 @@
 
 #include "ButtonGesture.h"
 #include "RgbActivityLed.h"
-#include "Mcp3201.h"
 #include "Mcp3561.h"
 #include "StatisticalCounter.h"
 #include "LongTimer.h"
+#include "TickerSpeaker.h"
 
 #include "MultimeterMeasurer.h"
 #include "MultimeterDriver.h"
@@ -36,7 +36,11 @@ Timer UsTimer;
 DigitalOut LedR(P1_11), LedG(P1_12), LedB(P1_13);
 RgbActivityDigitalOut StatusLed(UsTimer, LedR, LedG, LedB, false);
 
-PwmOut Speaker(P0_14);
+PwmOut SpeakerPwm(P0_14);
+TickerSpeaker Speaker(SpeakerPwm, 20);
+const uint32_t kSpeakerBeepFrequency = 2400;
+const float kSpeakerBeepAmplitude = 0.1;
+const uint32_t kSpeakerBeepDurationUs = 200 * 1000;
 
 DigitalOut GateControl(P0_25, 1);  // power gate
 
@@ -98,20 +102,34 @@ Widget* widVersionContents[] = {&widVersionData, &widBuildData};
 HGridWidget<2> widVersionGrid(widVersionContents);
 
 StaleNumericTextWidget widMeasV(1000, 3, 100 * 1000, FontArial32, kContrastActive, kContrastStale, FontArial16, 1000, 3);
-StaleTextWidget widMeasUnits(" mV", 3, 100 * 1000, FontArial16, kContrastActive, kContrastStale);
+StaleTextWidget widMeasMode(" DC", 3, 100 * 1000, FontArial16, kContrastActive, kContrastStale);
+StaleTextWidget widMeasUnits("  V", 3, 100 * 1000, FontArial16, kContrastActive, kContrastStale);
+
+Widget* measContents[] = {
+    NULL, NULL, &widMeasMode,
+    NULL, NULL, NULL,
+    &widMeasV, NULL, &widMeasUnits
+};
+FixedGridWidget widMeas(measContents, 160, 48);
+
+// Widget* widMeasContents[] = {&widMeasV, &widMeasUnits};
+// HGridWidget<2> widMeas(widMeasContents);
 
 TextWidget widMode("     ", 5, Font5x7, kContrastStale);
 LabelFrameWidget widModeFrame(&widMode, "MODE", Font3x5, kContrastBackground);
+NumericTextWidget widRange(0, 5, Font5x7, kContrastStale);
+LabelFrameWidget widRangeFrame(&widRange, "RANGE", Font3x5, kContrastBackground);
+
+Widget* widConfigContents[] = {&widModeFrame, &widRangeFrame};
+HGridWidget<2> widConfig(widConfigContents);
+
 TextWidget widSerial("SER", 0, Font5x7, kContrastBackground);
 LabelFrameWidget widSerialFrame(&widSerial, "", Font3x5, kContrastInvisible);  // to match alignment with mode
-
-Widget* widMeasContents[] = {&widMeasV, &widMeasUnits};
-HGridWidget<2> widMeas(widMeasContents);
 
 Widget* mainContents[] = {
     NULL, NULL, NULL,
     NULL, &widMeas, NULL,
-    &widModeFrame, NULL, &widSerialFrame
+    &widConfig, NULL, &widSerialFrame
 };
 FixedGridWidget widMain(mainContents, 160, 80);
 
@@ -218,15 +236,10 @@ void schedule_ble_events(BLE::OnEventsToProcessCallbackContext *context) {
 // Application-specific temporary
 StatisticalCounter<int32_t, int64_t> AdcStats;
 StatisticalCounter<int32_t, int64_t> VoltageStats;
-Timer ConvTimer;
-
 
 int main() {
   // Set SWO pin into GPIO mode
   NRF_CLOCK->TRACECONFIG = 0;
-
-  Speaker.period_us(10);
-  Speaker.write(0.5);
 
   printf("\r\n\r\n\r\n");
   printf("BLE Multimeter\n");
@@ -248,17 +261,11 @@ int main() {
   Timer timer;
   timer.start();
 
-  Timer audioTimer;
-  audioTimer.start();
-
-  Timer audioTimer2;
-  audioTimer2.start();
-
-  ConvTimer.start();
-
   LedR = 1;
   LedG = 1;
   LedB = 1;
+
+  Speaker.tone(kSpeakerBeepFrequency, kSpeakerBeepAmplitude, kSpeakerBeepDurationUs);
 
   LcdSpi.format(8, 0);
   LcdSpi.frequency(15 * 1000 * 1000);  // 66ns max SCK cycle, for write ops
@@ -283,20 +290,6 @@ int main() {
   uint16_t rangeDivide = 0;
 
   while (1) {
-    if (audioTimer2.elapsed_time().count() >= 10) {
-      float phase = audioTimer.elapsed_time().count() / 1000000.0 * 440.0 * 2 * 3.14159;
-      Speaker.write(0.5 + 0.10 * sin(phase));
-      audioTimer2.reset();
-    }
-
-    // if (audioTimer2.elapsed_time().count() >= 1000) {
-    //     if (audioTimer2.elapsed_time().count() % 9090 > 4545) {
-    //         Speaker.write(0.55);
-    //     } else {
-    //         Speaker.write(0.45);
-    //     }
-    // }
-
     if (UsbSerial.connected()) {
       StatusLed.setIdle(RgbActivity::kGreen);
     } else if (UsbSerial.configured()) {
@@ -313,6 +306,7 @@ int main() {
       switch (Switch0Gesture.update()) {
         case ButtonGesture::Gesture::kClickRelease:  // test code
           // ThermService.updateTemperature(LedR == 1 ? 30 : 25);
+          Speaker.tone(kSpeakerBeepFrequency, kSpeakerBeepAmplitude, kSpeakerBeepDurationUs);
           break;
         case ButtonGesture::Gesture::kHoldTransition:  // long press to shut off
           GateControl = 0;
@@ -345,14 +339,14 @@ int main() {
     int32_t voltage, adcValue;
     if (Meter.readVoltageMv(&voltage, &adcValue, &rangeDivide)) {
       Meter.autoRange(adcValue);
-      widMeasV.setValue(voltage);
       Adc.startConversion();
+
+      widMode.setValue("VOLTS");
+      widMeasV.setValue(voltage);
+      widRange.setValue(rangeDivide);
 
       AdcStats.addSample(adcValue);
       VoltageStats.addSample(voltage);
-      // printf("% 3lims    ADC=%li lsb    V=%li mV\n", 
-      //   ConvTimer.read_ms(), adcValue, voltage);
-      // ConvTimer.reset();
       if (DriverEnable == 1) {
         StatusLed.pulse(RgbActivity::kRed);
       } 
@@ -388,7 +382,6 @@ int main() {
 
     event_queue.dispatch_once();
 
-    // if (LcdUpdateTicker.checkExpired() && !Lcd.asyncBusy()) {
     if (LcdUpdateTicker.checkExpired()) {
       Lcd.clear();
       widMain.layout();
