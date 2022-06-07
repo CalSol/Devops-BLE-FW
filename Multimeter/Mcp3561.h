@@ -16,7 +16,7 @@ public:
   // default init routine
   void init(uint8_t oversample = kOsr::k256) {
     spi_.format(8, 0);
-    spi_.frequency(1000 * 1000);
+    spi_.frequency(20 * 1000 * 1000);
     writeReg8(kRegister::CONFIG0, 0xE2);  // internal VREF, internal clock w/ no CLK out, ADC standby
     writeReg8(kRegister::CONFIG1, (oversample & 0xf) << 2);
     writeReg8(kRegister::CONFIG3, 0x80);  // one-shot conversion into standby, 24b encoding
