@@ -19,9 +19,11 @@ public:
     for (size_t i=0; i<MeasureRangeBits; i++) {
       measureRange_[i] = measureRange[i];
     }
+    rangeTimer_.start();
   }
 
-  // Reads the voltage in milli-volts, returning true if the conversion was successful and false otherwise
+  // Reads the voltage, returning true if the conversion was successful and false otherwise.
+  // Voltage is 1V = kVoltageDenominator counts.
   bool readVoltageMv(int32_t* voltageOut = NULL, int32_t* rawAdcOut = NULL, uint16_t* rangeDivideOut = NULL) {
     int32_t adcValue;
     if (!adc_.readRaw24(&adcValue)) {
@@ -49,6 +51,10 @@ public:
     return true;
   }
 
+  void autoRange(int32_t rawAdc) {
+
+  }
+
   static const uint32_t kVoltageDenominator = 1000;
 
 protected:
@@ -59,6 +65,14 @@ protected:
   static const uint32_t kVref = 2400;  // By default +/-2% at 25C
   static const uint32_t kVrefDenominator = 1000;
   static const int32_t kAdcCounts = 1 << 23;
+
+  // Ranging control
+  Timer rangeTimer_;
+  static const uint32_t kRangeThresholdDenominator = 1000;
+  static const uint32_t kRangeUpThreshold = 950;  // theshold of current max voltage before we up a range
+  static const uint32_t kRangeDownThreshold = 850;  // threshold of previous max voltage before we down a range
+  static const uint16_t kRangeUpMs = 0;  // delay beacuse we can move up a range, intentionally lower than RangeDown
+  static const uint16_t kRangeDownMs = 100;  // delay before we can move down a range
 };
 
 #endif

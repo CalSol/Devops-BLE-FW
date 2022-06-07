@@ -339,6 +339,7 @@ int main() {
       
     int32_t voltage, adcValue;
     if (Meter.readVoltageMv(&voltage, &adcValue, &rangeDivide)) {
+      Meter.autoRange(adcValue);
       Adc.startConversion();
 
       AdcStats.addSample(adcValue);
