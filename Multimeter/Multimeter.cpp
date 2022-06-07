@@ -90,28 +90,30 @@ const uint8_t kContrastActive = 255;
 const uint8_t kContrastStale = 191;
 
 const uint8_t kContrastBackground = 191;
+const uint8_t kContrastInvisible = 0;
 
 TextWidget widVersionData("BLE DMM", 0, Font5x7, kContrastActive);
 TextWidget widBuildData("  " __DATE__, 0, Font5x7, kContrastBackground);
 Widget* widVersionContents[] = {&widVersionData, &widBuildData};
 HGridWidget<2> widVersionGrid(widVersionContents);
 
-TextWidget widSerial(" ", 0, Font5x7, kContrastBackground);
+StaleNumericTextWidget widMeasV(1000, 3, 100 * 1000, FontArial32, kContrastActive, kContrastStale, FontArial16, 1000, 3);
+StaleTextWidget widMeasUnits(" mV", 3, 100 * 1000, FontArial16, kContrastActive, kContrastStale);
 
-TextWidget widEnable("     ", 0, Font5x7, kContrastStale);
-LabelFrameWidget widEnableFrame(&widEnable, "ENABLE", Font3x5, kContrastBackground);
+TextWidget widMode("     ", 5, Font5x7, kContrastStale);
+LabelFrameWidget widModeFrame(&widMode, "MODE", Font3x5, kContrastBackground);
+TextWidget widSerial("SER", 0, Font5x7, kContrastBackground);
+LabelFrameWidget widSerialFrame(&widSerial, "", Font3x5, kContrastInvisible);  // to match alignment with mode
 
-StaleNumericTextWidget widMeasV(0, 2, 100 * 1000, Font5x7, kContrastActive, kContrastStale, Font3x5, 1000, 2);
-LabelFrameWidget widMeasVFrame(&widMeasV, "MEAS V", Font3x5, kContrastBackground);
+Widget* widMeasContents[] = {&widMeasV, &widMeasUnits};
+HGridWidget<2> widMeas(widMeasContents);
 
-StaleNumericTextWidget widMeasI(0, 2, 100 * 1000, Font5x7, kContrastActive, kContrastStale, Font3x5, 1000, 2);
-LabelFrameWidget widMeasIFrame(&widMeasI, "MEAS I", Font3x5, kContrastBackground);
-
-Widget* widMeasContents[] = {&widEnableFrame, &widMeasVFrame, &widMeasIFrame};
-HGridWidget<3> widMeas(widMeasContents);
-
-Widget* widMainContents[] = {&widVersionGrid, &widSerial, &widMeas};
-VGridWidget<3> widMain(widMainContents);
+Widget* mainContents[] = {
+    NULL, NULL, NULL,
+    NULL, &widMeas, NULL,
+    &widModeFrame, NULL, &widSerialFrame
+};
+FixedGridWidget widMain(mainContents, 160, 80);
 
 
 // BLE comms
@@ -214,7 +216,7 @@ void schedule_ble_events(BLE::OnEventsToProcessCallbackContext *context) {
 
 
 // Application-specific temporary
-StatisticalCounter<uint32_t, uint64_t> AdcStats;
+StatisticalCounter<int32_t, int64_t> AdcStats;
 StatisticalCounter<int32_t, int64_t> VoltageStats;
 Timer ConvTimer;
 
@@ -259,10 +261,12 @@ int main() {
   LedB = 1;
 
   LcdSpi.format(8, 0);
+  LcdSpi.frequency(15 * 1000 * 1000);  // 66ns max SCK cycle, for write ops
   Lcd.init();
 
+  AdcSpi.format(8, 0);
+  AdcSpi.frequency(20 * 1000 * 1000);
   Adc.fullReset();
-
   Adc.init(Mcp3561::kOsr::k40960);
   // Adc.init(Mcp3561::kOsr::k98304);
   uint8_t statusCode = Adc.startConversion();
@@ -341,6 +345,7 @@ int main() {
     int32_t voltage, adcValue;
     if (Meter.readVoltageMv(&voltage, &adcValue, &rangeDivide)) {
       Meter.autoRange(adcValue);
+      widMeasV.setValue(voltage);
       Adc.startConversion();
 
       AdcStats.addSample(adcValue);
@@ -350,12 +355,6 @@ int main() {
       // ConvTimer.reset();
       if (DriverEnable == 1) {
         StatusLed.pulse(RgbActivity::kRed);
-      } else {
-        // if (MeasureSelect == 1) {  // direct
-          StatusLed.pulse(RgbActivity::kCyan);
-        // } else {  // divided
-        //   StatusLed.pulse(RgbActivity::kGreen);
-        // }
       } 
     }
 
@@ -370,7 +369,7 @@ int main() {
       bleVoltmeter.writeVoltage(voltageStats.avg);
 
       // debugging stuff below
-      printf("NC=%i, Div=%u, ADC(%u) = %lu - %lu - %lu (%lu)    V(%u) = %li - %li - %li (%li)\n", 
+      printf("NC=%i, Div=%u, ADC(%u) = %li - %li - %li (%lu)    V(%u) = %li - %li - %li (%li)\n", 
           InNegControl.read(), rangeDivide,
           adcStats.numSamples, adcStats.min, adcStats.avg, adcStats.max, 
           adcStats.max-adcStats.min,
@@ -389,13 +388,13 @@ int main() {
 
     event_queue.dispatch_once();
 
-    // TODO this takes a long time to run - this will interfere with the speaker tone generation
-    // if (LcdUpdateTicker.checkExpired()) {
-    //   Lcd.clear();
-    //   widMain.layout();
-    //   widMain.draw(Lcd, 0, 0);
-    //   Lcd.update();
-    // }
+    // if (LcdUpdateTicker.checkExpired() && !Lcd.asyncBusy()) {
+    if (LcdUpdateTicker.checkExpired()) {
+      Lcd.clear();
+      widMain.layout();
+      widMain.draw(Lcd, 0, 0);
+      Lcd.update();
+    }
 
     StatusLed.update();
   }
