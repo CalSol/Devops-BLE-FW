@@ -50,8 +50,8 @@ ButtonGesture Switch2Gesture(Switch2);
 SPI AdcSpi(P1_9, P0_8, P0_13);  // mosi, miso, sck
 DigitalOut AdcCs(P0_15, 1);
 Mcp3561 Adc(AdcSpi, AdcCs);
-DigitalOut MeasureRange1(P0_21, 0);
-DigitalOut MeasureRange0(P0_19, 0);
+DigitalOut MeasureRange1(P0_21, 1);
+DigitalOut MeasureRange0(P0_19, 1);
 DigitalOut InNegControl(P0_17, 1);  // 0 = GND, 1 = divider
 DigitalOut* measureRangeArray[] = {&MeasureRange0, &MeasureRange1};
 uint16_t measureRangeDivide[] = {
@@ -264,6 +264,7 @@ int main() {
   Adc.fullReset();
 
   Adc.init(Mcp3561::kOsr::k40960);
+  // Adc.init(Mcp3561::kOsr::k98304);
   uint8_t statusCode = Adc.startConversion();
 
   printf("Status=%02x, ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x, MUX=%02x\n", statusCode,
