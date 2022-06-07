@@ -40,7 +40,7 @@ PwmOut SpeakerPwm(P0_14);
 TickerSpeaker Speaker(SpeakerPwm, 20);
 const uint32_t kSpeakerBeepFrequency = 2400;
 const float kSpeakerBeepAmplitude = 0.1;
-const uint32_t kSpeakerBeepDurationUs = 200 * 1000;
+const uint32_t kSpeakerBeepDurationUs = 100 * 1000;
 
 DigitalOut GateControl(P0_25, 1);  // power gate
 
@@ -68,9 +68,10 @@ MultimeterMeasurer<4, 2> Meter(Adc, measureRangeDivide, measureRangeArray);
 
 DigitalOut DriverEnable(P0_24);  // 1 = enable driver
 PwmOut DriverControl(P0_23);  // current driver setpoint
+// 00 = 1mA, 01 = 100uA, 10 = 10uA, 11 = 1uA
 DigitalOut DriverRange0(P0_22);
 DigitalOut DriverRange1(P0_20);
-// MultimeterDriver Driver(DriverEnable, DriverControl);
+MultimeterDriver Driver(DriverEnable, DriverControl);
 
 BufferedSerial SwdUart(P1_0, NC, 115200);  // tx, rx
 FileHandle *mbed::mbed_override_console(int) {  // redirect printf to SWD UART pins
@@ -101,7 +102,7 @@ TextWidget widBuildData("  " __DATE__, 0, Font5x7, kContrastBackground);
 Widget* widVersionContents[] = {&widVersionData, &widBuildData};
 HGridWidget<2> widVersionGrid(widVersionContents);
 
-StaleNumericTextWidget widMeasV(1000, 3, 100 * 1000, FontArial32, kContrastActive, kContrastStale, FontArial16, 1000, 3);
+StaleNumericTextWidget widMeasV(0, 3, 100 * 1000, FontArial32, kContrastActive, kContrastStale, FontArial16, 1000, 3);
 StaleTextWidget widMeasMode(" DC", 3, 100 * 1000, FontArial16, kContrastActive, kContrastStale);
 StaleTextWidget widMeasUnits("  V", 3, 100 * 1000, FontArial16, kContrastActive, kContrastStale);
 
@@ -111,9 +112,6 @@ Widget* measContents[] = {
     &widMeasV, NULL, &widMeasUnits
 };
 FixedGridWidget widMeas(measContents, 160, 48);
-
-// Widget* widMeasContents[] = {&widMeasV, &widMeasUnits};
-// HGridWidget<2> widMeas(widMeasContents);
 
 TextWidget widMode("     ", 5, Font5x7, kContrastStale);
 LabelFrameWidget widModeFrame(&widMode, "MODE", Font3x5, kContrastBackground);
@@ -236,6 +234,13 @@ void schedule_ble_events(BLE::OnEventsToProcessCallbackContext *context) {
 // Application-specific temporary
 StatisticalCounter<int32_t, int64_t> AdcStats;
 StatisticalCounter<int32_t, int64_t> VoltageStats;
+enum kMultimeterMode {
+  kVoltage = 0,
+  kResistance = 1,
+  kDiode = 2,
+  kContinuity = 3
+};
+
 
 int main() {
   // Set SWO pin into GPIO mode
@@ -274,8 +279,7 @@ int main() {
   AdcSpi.format(8, 0);
   AdcSpi.frequency(20 * 1000 * 1000);
   Adc.fullReset();
-  Adc.init(Mcp3561::kOsr::k40960);
-  // Adc.init(Mcp3561::kOsr::k98304);
+  Adc.init(Mcp3561::kOsr::k98304);
   uint8_t statusCode = Adc.startConversion();
 
   printf("Status=%02x, ADC Configs 0=%02x, 1=%02x, 2=%02x, 3=%02x, MUX=%02x\n", statusCode,
@@ -283,11 +287,12 @@ int main() {
     Adc.readReg8(Mcp3561::kRegister::CONFIG2), Adc.readReg8(Mcp3561::kRegister::CONFIG3),
     Adc.readReg8(Mcp3561::kRegister::MUX));
 
-  // Driver.enable();
-  // Driver.setCurrent(2000);
-
   bool sw0Released = false;
   uint16_t rangeDivide = 0;
+
+  kMultimeterMode lastMode = (kMultimeterMode)-1;
+  kMultimeterMode mode = kMultimeterMode::kVoltage;
+  bool continuityTonePlaying = false;
 
   while (1) {
     if (UsbSerial.connected()) {
@@ -306,6 +311,7 @@ int main() {
       switch (Switch0Gesture.update()) {
         case ButtonGesture::Gesture::kClickRelease:  // test code
           // ThermService.updateTemperature(LedR == 1 ? 30 : 25);
+          mode = (kMultimeterMode)((mode + 1) % 4);
           Speaker.tone(kSpeakerBeepFrequency, kSpeakerBeepAmplitude, kSpeakerBeepDurationUs);
           break;
         case ButtonGesture::Gesture::kHoldTransition:  // long press to shut off
@@ -320,37 +326,83 @@ int main() {
     }
 
     switch (Switch2Gesture.update()) {
-      case ButtonGesture::Gesture::kClickRelease:
-        // MeasureSelect = !MeasureSelect;
-        break;
-      case ButtonGesture::Gesture::kHoldTransition:  // long press to switch into driver mode
-        InNegControl = !InNegControl;
-        if (InNegControl == 0) {
-          // Driver.setCurrent(1000);
-          // MeasureSelect = 1;  // set to direct measurement
-          // Driver.enable(true);
-        } else {
-          // Driver.enable(false);
-        }
-        break;
       default: break;
     }
-      
+
     int32_t voltage, adcValue;
     if (Meter.readVoltageMv(&voltage, &adcValue, &rangeDivide)) {
       Meter.autoRange(adcValue);
+
+      switch (mode) {
+        case kMultimeterMode::kVoltage:
+          if (lastMode != mode) {
+            Adc.init(Mcp3561::kOsr::k98304);  // high precision mode
+            Driver.setCurrent(0);  // TODO autoanging
+          }
+          widMode.setValue(" VLT ");
+          InNegControl = 1;
+          Driver.enable(false);
+          break;
+        case kMultimeterMode::kResistance:
+          if (lastMode != mode) {
+            Adc.init(Mcp3561::kOsr::k98304);  // high precision mode
+            Driver.setCurrent(1000);
+          }
+          widMode.setValue(" RES ");
+          InNegControl = 0;
+          Driver.enable(true);
+          Driver.setCurrent(1000);  // TODO lower current driver
+          break;
+        case kMultimeterMode::kDiode:
+          if (lastMode != mode) {
+            Adc.init(Mcp3561::kOsr::k98304);  // high precision mode
+            Driver.setCurrent(1000);
+          }
+          widMode.setValue(" DIO ");
+          InNegControl = 0;
+          Driver.enable(true);
+          Driver.setCurrent(1000);
+          break;
+        case kMultimeterMode::kContinuity:
+          if (lastMode != mode) {
+            Adc.init(Mcp3561::kOsr::k2048);  // fast mode
+            Driver.setCurrent(1000);
+            continuityTonePlaying = false;
+          }
+          widMode.setValue(" CON ");
+          InNegControl = 0;
+          Driver.enable(true);
+          if (voltage < 100) {
+            if (!continuityTonePlaying) {
+              Speaker.tone(kSpeakerBeepFrequency, kSpeakerBeepAmplitude);
+              continuityTonePlaying = true;
+            }
+          } else {
+            if (continuityTonePlaying) {
+              Speaker.tone(0, 0);
+              continuityTonePlaying = false;
+            }
+          }
+          break;
+        default:
+          widMode.setValue(" UNK ");
+          InNegControl = 1;
+          Driver.enable(false);
+          break;
+      }
+      lastMode = mode;
       Adc.startConversion();
 
-      widMode.setValue("VOLTS");
       widMeasV.setValue(voltage);
       widRange.setValue(rangeDivide);
 
       AdcStats.addSample(adcValue);
       VoltageStats.addSample(voltage);
-      if (DriverEnable == 1) {
-        StatusLed.pulse(RgbActivity::kRed);
-      } 
     }
+
+    if (DriverEnable == 1) {
+      StatusLed.pulse(RgbActivity::kRed);
+    } 
 
     if (timer.read_ms() >= 1000) {
       timer.reset();
@@ -382,6 +434,7 @@ int main() {
 
     event_queue.dispatch_once();
 
+    // TODO: this takes a long time, this may mess with continuity mode
     if (LcdUpdateTicker.checkExpired()) {
       Lcd.clear();
       widMain.layout();
